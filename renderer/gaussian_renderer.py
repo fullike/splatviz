@@ -12,6 +12,7 @@ from pathlib import Path
 from compression.compression_exp import run_single_decompression
 from gaussian_renderer import render_simple
 from scene import GaussianModel
+from scene.gaussian_instance import GaussianInstance
 from scene.cameras import CustomCam
 from renderer.base_renderer import Renderer
 from splatviz_utils.dict_utils import EasyDict
@@ -21,7 +22,7 @@ class GaussianRenderer(Renderer):
     def __init__(self, num_parallel_scenes=16):
         super().__init__()
         self.num_parallel_scenes = num_parallel_scenes
-        self.gaussian_models: List[GaussianModel | None] = [None] * num_parallel_scenes
+        self.gaussian_instances: List[GaussianInstance | None] = [None] * num_parallel_scenes
         self._current_ply_file_paths: List[str | None] = [None] * num_parallel_scenes
         self.bg_color = torch.tensor([0, 0, 0], dtype=torch.float32).to("cuda")
         self._last_num_scenes = 0
@@ -56,43 +57,37 @@ class GaussianRenderer(Renderer):
         # Remove old scenes
         if len(ply_file_paths) < self._last_num_scenes:
             for i in range(ply_file_paths, self.num_parallel_scenes):
-                self.gaussian_models[i] = None
+                self.gaussian_instances[i] = None
             self._last_num_scenes = len(ply_file_paths)
 
         images = []
+        gs = GaussianModel(sh_degree=0, disable_xyz_log_activation=True)
         for scene_index, ply_file_path in enumerate(ply_file_paths):
             # Load
             if ply_file_path != self._current_ply_file_paths[scene_index]:
-                self.gaussian_models[scene_index] = self._load_model(ply_file_path)
+                self.gaussian_instances[scene_index] = GaussianInstance(self._load_model(ply_file_path))
                 self._current_ply_file_paths[scene_index] = ply_file_path
+            self.gaussian_instances[scene_index].add_to_world(gs)
+        if gs.get_xyz.shape[0] == 0:
+            return
+        # Render video
+        if len(video_cams) > 0:
+            self.render_video("./_videos", video_cams, gs)
 
-            # Edit
-            gs: GaussianModel = copy.deepcopy(self.gaussian_models[scene_index])
-            try:
-                exec(self.sanitize_command(edit_text))
-            except Exception as e:
-                error = traceback.format_exc()
-                error += str(e)
-                res.error = error
+        # Render current view
+        fov_rad = fov / 360 * 2 * np.pi
+        render_cam = CustomCam(resolution, resolution, fovy=fov_rad, fovx=fov_rad, extr=cam_params)
+        render = render_simple(viewpoint_camera=render_cam, pc=gs, bg_color=background_color.to("cuda"))
+        if render_alpha:
+            images.append(render["alpha"])
+        elif render_depth:
+            images.append(render["depth"] / render["depth"].max())
+        else:
+            images.append(render["render"])
 
-            # Render video
-            if len(video_cams) > 0:
-                self.render_video("./_videos", video_cams, gs)
-
-            # Render current view
-            fov_rad = fov / 360 * 2 * np.pi
-            render_cam = CustomCam(resolution, resolution, fovy=fov_rad, fovx=fov_rad, extr=cam_params)
-            render = render_simple(viewpoint_camera=render_cam, pc=gs, bg_color=background_color.to("cuda"))
-            if render_alpha:
-                images.append(render["alpha"])
-            elif render_depth:
-                images.append(render["depth"] / render["depth"].max())
-            else:
-                images.append(render["render"])
-
-            # Save ply
-            if save_ply_path is not None:
-                self.save_ply(gs, save_ply_path)
+        # Save ply
+        if save_ply_path is not None:
+            self.save_ply(gs, save_ply_path)
 
         self._return_image(
             images,

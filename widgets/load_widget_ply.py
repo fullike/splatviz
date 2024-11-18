@@ -1,4 +1,5 @@
 import os
+import torch
 from imgui_bundle import imgui
 
 from splatviz_utils.gui_utils import imgui_utils
@@ -43,6 +44,17 @@ class LoadWidget(Widget):
                         plys_to_remove.append(i)
                     imgui.same_line()
                 imgui.text(f"Scene {i + 1}: " + ply[len(self.root) :])
+                # Instance transform
+                instance = viz.renderer.renderer.gaussian_instances[i]
+                if instance != None:
+                    label("Location", viz.label_w)
+                    _changed, location = imgui.input_float3("##location_"+str(i), v=instance._location.tolist(), format="%.1f")
+                    if _changed:
+                        instance._location = torch.tensor(location, device="cuda")                
+                    label("Rotation", viz.label_w)
+                    _changed, rotation = imgui.input_float3("##rotation_"+str(i), v=torch.rad2deg(instance._rotation).tolist(), format="%.1f")
+                    if _changed:
+                        instance._rotation = torch.deg2rad(torch.tensor(rotation, device="cuda"))
 
             for i in plys_to_remove[::-1]:
                 self.plys.pop(i)

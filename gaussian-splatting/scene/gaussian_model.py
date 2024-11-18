@@ -58,12 +58,12 @@ class GaussianModel:
         self.disable_xyz_log_activation = disable_xyz_log_activation
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree  
-        self._xyz = torch.empty(0)
-        self._features_dc = torch.empty(0)
-        self._features_rest = torch.empty(0)
-        self._scaling = torch.empty(0)
-        self._rotation = torch.empty(0)
-        self._opacity = torch.empty(0)
+        self._xyz = torch.empty(0, device="cuda")
+        self._features_dc = torch.empty(0, device="cuda")
+        self._features_rest = torch.empty(0, device="cuda")
+        self._scaling = torch.empty(0, device="cuda")
+        self._rotation = torch.empty(0, device="cuda")
+        self._opacity = torch.empty(0, device="cuda")
         self.max_radii2D = torch.empty(0)
         self.xyz_gradient_accum = torch.empty(0)
         self.denom = torch.empty(0)
